@@ -27,19 +27,19 @@ class bossUno{
     }
     
     int aumertarVidaBoss(){
-        vidaBoss += 15;
+        vidaBoss += 20;
         esTvidaBoss = vidaBoss;
         return esTvidaBoss;
     }
     
     int aumentarAtaqueBoss(){
-        ataqueBoss += 1;
+        ataqueBoss += 2;
         esTataqueBoss = ataqueBoss;
         return esTataqueBoss;
     }
     
     int aumentarVelocidadBoss(){
-        velocidadBoss = 8 + ((2 * nivelBoss) - nivelPjs);
+        velocidadBoss = 7 + ((2 * nivelBoss) - nivelPjs);
         esTvelocidadBoss = velocidadBoss;
         return esTvelocidadBoss;
     }

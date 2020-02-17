@@ -7,14 +7,15 @@ class sistemaUno{
     Scanner leer = new Scanner(System.in);
     
     boolean decidirEsquivaAtaque(int a, int b){
-        int proba;
-        if(a <= b){
-            proba = (int)(Math.random() * b);
-            return proba <= a;
+        int proba1 = 0, proba2 = 0;
+        if(b >= a){
+            proba1 = (int)(1 + Math.random() * 10);
+            proba2 = 10 - proba1;
         }else{
-            proba = (int)(Math.random() * a);
-            return proba <= b;
+            proba2 = (int)(1 + Math.random() * 10);
+            proba1 = 10 - proba2;
         }
+        return proba1 <= proba2;
     }
     
     boolean decidirAtaqueDoble(int a, int b){

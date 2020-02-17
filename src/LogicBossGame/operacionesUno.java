@@ -45,12 +45,12 @@ class operacionesUno{
     }
     
     short randomUno(){
-        short valor1 = (short)(int)(2 + Math.random() * 325);
+        short valor1 = (short)(int)(2 + Math.random() * 45);
         return valor1;
     }
     
     short randomDos(){
-        short valor2 = (short)(int)(3 + Math.random() * 125);
+        short valor2 = (short)(int)(3 + Math.random() * 15);
         return valor2;
     }
     
@@ -137,7 +137,7 @@ class operacionesUno{
         short uno = 0, dos = 0;
         uno = randomUno();
         dos = randomDos();
-        System.out.println("¿" +uno+ " / " +dos+ "?\n");
+        System.out.println("¿" +uno+ " // " +dos+ "?\n");
         pregunta = dividir(uno, dos);
         randomPreguntas(pregunta);   
         System.out.print("\n RTA: ");
