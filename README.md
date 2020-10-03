@@ -15,11 +15,3 @@
   Para la ejecución del código recomiendo usar el entorno de desarrollo libre NetBeans.
 
   Dentro del entorno de desarrollo debe darse click derecho sobre el archivo sistemaUno.java y seleccionar con click izquierdo la opción   de Run File.
-
-* Proyección:
-
-  En un futuro espero adaptar el código para los entornos Web.
-  
-* Link del Proyecto en GitHub:
-
-  https://github.com/users/GoldSymbol/projects/1  
