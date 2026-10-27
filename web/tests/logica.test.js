@@ -3,111 +3,124 @@ const test = require("node:test");
 const assert = require("node:assert");
 const LB = require("../js/logica.js");
 
-// Generador con valores fijos para reproducir turnos concretos.
-function secuencia(valores) {
-  let i = 0;
-  return () => valores[i++ % valores.length];
+// Juega una partida entera acertando con la probabilidad dada.
+function jugar(clave, dificultad, acierto) {
+  const j = new LB.Juego(clave, { dificultad });
+  const stats = ["vida", "ataque", "velocidad", "esquiva"];
+  let t = 0;
+  while (!j.fin) {
+    t++;
+    if (j.puntosPendientes > 0) {
+      j.asignarPunto(stats[t % 4]);
+      continue;
+    }
+    j.responder(Math.random() < acierto ? j.pregunta.respuesta : -1);
+  }
+  return j;
 }
 
-test("los personajes y el boss empiezan con los stats del original", () => {
-  const j = new LB.Juego("3");
-  assert.deepStrictEqual([j.pj.vida, j.pj.ataque, j.pj.velocidad, j.pj.esquiva], [8, 14, 6, 12]);
-  assert.deepStrictEqual([j.bs.vidaBoss, j.bs.ataqueBoss, j.bs.velocidadBoss, j.bs.esquivaBoss], [50, 2, 9, 4]);
-  assert.strictEqual(j.ap.expTotal, 60);
+test("las preguntas son aptas para niños en todos los tramos", () => {
+  for (let tramo = 1; tramo <= 6; tramo++) {
+    for (let i = 0; i < 3000; i++) {
+      const p = LB.crearPregunta(Math.random, tramo);
+      const q = JSON.stringify(p);
+      assert.ok(Number.isInteger(p.respuesta) && p.respuesta >= 0, q);
+      assert.ok(p.a >= 0 && p.b >= 0, q);
+      assert.strictEqual(p.opciones.length, 4, q);
+      assert.strictEqual(new Set(p.opciones).size, 4, q);
+      assert.ok(p.opciones.includes(p.respuesta), q);
+      assert.ok(p.opciones.every((o) => Number.isInteger(o) && o >= 0), q);
+      if (p.clase === "division") assert.strictEqual(p.a, p.b * p.respuesta, q);
+      if (tramo === 1) {
+        assert.ok(p.clase === "suma" || p.clase === "resta", q);
+        assert.ok(Math.max(p.a, p.b, p.respuesta) <= 10, q);
+      }
+      if (tramo < 5) assert.notStrictEqual(p.clase, "division", q);
+    }
+  }
+});
+
+test("la dificultad de las preguntas sube con el boss y con el modo", () => {
+  assert.strictEqual(LB.tramoPregunta(1, "facil"), 1);
+  assert.strictEqual(LB.tramoPregunta(1, "normal"), 1);
+  assert.strictEqual(LB.tramoPregunta(4, "normal"), 2);
+  assert.strictEqual(LB.tramoPregunta(10, "normal"), 5);
+  assert.strictEqual(LB.tramoPregunta(10, "dificil"), 6);
+  assert.strictEqual(LB.tramoPregunta(10, "facil"), 4);
 });
 
 test("las adivinanzas desbloquean a Saitama y a Messi", () => {
   assert.strictEqual(LB.seleccionar("uno"), "777");
   assert.strictEqual(LB.seleccionar(" Messi "), "888");
-  assert.strictEqual(LB.seleccionar("7"), "7");
+  assert.strictEqual(LB.seleccionar("siete"), null);
 });
 
-test("cada pregunta incluye la respuesta correcta entre las opciones", () => {
-  const op = new LB.Operaciones(Math.random);
-  for (let i = 0; i < 2000; i++) {
-    const p = op.crearPregunta();
-    assert.ok(p.opciones.includes(p.respuesta), JSON.stringify(p));
-    assert.ok(p.opciones.length <= 4);
-  }
-});
-
-test("la división es entera y la potencia usa la multiplicación repetida", () => {
-  const op = new LB.Operaciones(Math.random);
-  assert.strictEqual(op.potenciar(3, 4), 81);
-  assert.strictEqual(op.potenciar(5, 1), 5);
-  // rnd: tipo=4 (división), uno = 2 + 0.9*45 -> 42, dos = 3 + 0.5*15 -> 10
-  const op2 = new LB.Operaciones(secuencia([0.7, 0.9, 0.5, 0, 0, 0, 0, 0, 0, 0.3, 0.1, 0.6, 0.9]));
-  const p = op2.crearPregunta();
-  assert.strictEqual(p.simbolo, "÷");
-  assert.strictEqual(p.respuesta, 4);
-});
-
-test("las probabilidades de esquiva coinciden con sistemaUno", () => {
-  // Personaje con más esquiva: el ataque entra el 50% de las veces.
-  let fallos = 0;
-  for (let k = 0; k < 10; k++) {
-    if (!LB.decidirEsquivaAtaque(() => k / 10, 4, 10)) fallos++;
-  }
-  assert.strictEqual(fallos, 5);
-  // Boss con más esquiva: el ataque entra el 40% de las veces.
-  fallos = 0;
-  for (let k = 0; k < 10; k++) {
-    if (!LB.decidirEsquivaAtaque(() => k / 10, 12, 10)) fallos++;
-  }
-  assert.strictEqual(fallos, 4);
-});
-
-test("vencer al boss sube su nivel y restaura su vida con +20", () => {
-  const j = new LB.Juego("1", { rnd: () => 0.95 });
-  j.bs.esTvidaBoss = 1;
+test("vencer a un boss cura al jugador y trae al siguiente", () => {
+  const j = new LB.Juego("1", { rnd: () => 0.99 });
+  j.pj.vida = 10;
+  j.bs.vida = 1;
   const r = j.responder(j.pregunta.respuesta);
   assert.ok(r.eventos.some((e) => e.tipo === "bossDerrotado"));
-  assert.strictEqual(j.bs.nivelBoss, 2);
-  assert.strictEqual(j.bs.vidaBoss, 70);
-  assert.strictEqual(j.bs.esTvidaBoss, 70);
-  assert.strictEqual(j.bs.ataqueBoss, 4);
-  assert.strictEqual(j.bs.esquivaBoss, 7);
-  assert.strictEqual(j.bs.velocidadBoss, 7 + 2 * 2 - 2);
+  assert.strictEqual(j.bs.nivel, 2);
+  assert.strictEqual(j.bs.vida, j.bs.vidaMax);
+  assert.ok(j.pj.vida > 10);
 });
 
-test("al subir de nivel hay que repartir 2 puntos antes de seguir", () => {
-  const j = new LB.Juego("4", { rnd: () => 0.95 });
-  j.ap.estExp = 59;
+test("tres aciertos seguidos dan golpe crítico", () => {
+  const j = new LB.Juego("1", { rnd: () => 0.99 });
+  j.bs.vida = 1000;
   j.responder(j.pregunta.respuesta);
-  assert.strictEqual(j.pj.nivelPj, 2);
+  j.responder(j.pregunta.respuesta);
+  const r = j.responder(j.pregunta.respuesta);
+  const golpe = r.eventos.find((e) => e.tipo === "golpeJugador");
+  assert.ok(golpe.critico);
+  assert.strictEqual(golpe.danio, 15);
+});
+
+test("al subir de nivel hay que repartir los puntos antes de seguir", () => {
+  const j = new LB.Juego("4", { rnd: () => 0.99 });
+  j.bs.vida = 1000;
+  j.exp.actual = 39;
+  j.responder(j.pregunta.respuesta);
+  assert.strictEqual(j.pj.nivel, 2);
   assert.strictEqual(j.puntosPendientes, 2);
-  assert.strictEqual(j.ap.expTotal, 120);
-  assert.strictEqual(j.ap.estExp, 0);
+  assert.ok(j.exp.actual > 0, "la experiencia sobrante se conserva");
   assert.throws(() => j.responder(0));
-  j.asignarPunto("ataque");
   j.asignarPunto("vida");
+  j.asignarPunto("ataque");
+  assert.strictEqual(j.pj.vidaMax, 28 + LB.VIDA_POR_PUNTO);
   assert.strictEqual(j.pj.ataque, 13);
-  assert.strictEqual(j.pj.estVIDA, 10);
-  assert.strictEqual(j.puntosPendientes, 0);
   assert.ok(j.pregunta);
 });
 
 test("responder mal puede dejar al jugador sin vida", () => {
-  const j = new LB.Juego("2", { rnd: () => 0.05 });
-  j.pj.estVIDA = 1;
-  const r = j.responder(j.pregunta.respuesta + 1000);
+  const j = new LB.Juego("2", { rnd: () => 0.99 });
+  j.pj.vida = 1;
+  const r = j.responder(-1);
   assert.strictEqual(r.fin, "derrota");
   assert.strictEqual(j.pregunta, null);
 });
 
-test("vencer al boss de nivel 24 gana la partida", () => {
-  const j = new LB.Juego("1", { rnd: () => 0.95 });
-  j.bs.nivelBoss = 24;
-  j.bs.esTvidaBoss = 1;
-  const r = j.responder(j.pregunta.respuesta);
-  assert.strictEqual(r.fin, "victoria");
+test("vencer al último boss gana la partida, también con personajes secretos", () => {
+  for (const clave of ["1", "777", "888"]) {
+    const j = new LB.Juego(clave, { rnd: () => 0.99 });
+    j.bs = new LB.Boss(LB.NIVEL_FINAL);
+    j.bs.vida = 1;
+    const r = j.responder(j.pregunta.respuesta);
+    assert.strictEqual(r.fin, "victoria", clave);
+  }
 });
 
-test("con Messi el boss evoluciona cuando esquivas su ataque", () => {
-  const j = new LB.Juego("888", { rnd: () => 0.95 });
-  const r = j.responder(j.pregunta.respuesta + 1000);
-  assert.ok(r.eventos.some((e) => e.tipo === "bossEvoluciona"));
-  assert.strictEqual(j.bs.nivelBoss, 2);
-  assert.strictEqual(j.bs.vidaBoss, 50 + 20 * 15);
-  assert.strictEqual(j.puntosPorNivel, 4);
+test("el balance permite ganar acertando la mayoría", () => {
+  let victorias = 0;
+  for (let i = 0; i < 300; i++) {
+    if (jugar("4", "normal", 0.9).fin === "victoria") victorias++;
+  }
+  assert.ok(victorias / 300 > 0.75, "victorias con 90 % de aciertos: " + victorias);
+
+  victorias = 0;
+  for (let i = 0; i < 300; i++) {
+    if (jugar("4", "normal", 0.5).fin === "victoria") victorias++;
+  }
+  assert.ok(victorias / 300 < 0.1, "victorias con 50 % de aciertos: " + victorias);
 });

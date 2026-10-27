@@ -5,29 +5,46 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Logic Boss Game</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Derrota al boss resolviendo operaciones matemáticas.">
+<meta name="description" content="Derrota a los bosses resolviendo operaciones matemáticas.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@400;700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap">
 <link rel="stylesheet" href="css/estilos.css">
 </head>
 <body>
+<!-- Filtro que da textura de tiza a todos los dibujos -->
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <filter id="tiza" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="4" result="ruido"/>
+      <feDisplacementMap in="SourceGraphic" in2="ruido" scale="2.2" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+</svg>
+
 <div class="pizarra">
   <header class="cabecera">
     <h1 class="titulo">Logic Boss Game</h1>
-    <p class="lema">Resuelve operaciones, golpea al boss, sube de nivel.</p>
+    <button type="button" class="boton-sonido" id="boton-sonido" aria-pressed="true">Sonido: sí</button>
   </header>
 
-  <!-- Pantalla de inicio: selección de personaje -->
+  <!-- Pantalla de inicio -->
   <main id="pantalla-inicio" class="pantalla">
+    <p class="lema">Resuelve operaciones para atacar a los bosses. Vence a los 10 para ganar.</p>
+
+    <section class="bloque" aria-labelledby="titulo-dificultad">
+      <h2 id="titulo-dificultad" class="subtitulo"><span class="paso">1</span> Elige la dificultad</h2>
+      <div class="dificultades" role="radiogroup" aria-labelledby="titulo-dificultad" id="dificultades"></div>
+    </section>
+
     <section class="bloque" aria-labelledby="titulo-personajes">
-      <h2 id="titulo-personajes" class="subtitulo">Elige tu personaje</h2>
+      <h2 id="titulo-personajes" class="subtitulo"><span class="paso">2</span> Elige tu personaje</h2>
       <div id="lista-personajes" class="personajes"></div>
     </section>
 
     <section class="bloque adivinanzas" aria-labelledby="titulo-adivinanzas">
       <h2 id="titulo-adivinanzas" class="subtitulo">¡Adivinanzas bonus!</h2>
-      <p class="nota">Si aciertas una, desbloqueas un personaje secreto con stats enormes, bosses que evolucionan y el doble de puntos por nivel.</p>
+      <p class="nota">Si aciertas una, desbloqueas un personaje secreto que gana 4 puntos por nivel.</p>
       <ol class="lista-adivinanzas">
         <li>Un agricultor tiene tres montones de paja en el pajar y cuatro en el prado. Si los junta, ¿cuántos montones tiene?</li>
         <li>¿La pulga?</li>
@@ -43,79 +60,84 @@
     </section>
 
     <details class="bloque instrucciones">
-      <summary class="subtitulo">Instrucciones del juego</summary>
+      <summary class="subtitulo">Cómo se juega</summary>
       <ul>
-        <li><b>Vida</b>: el daño que aguanta un personaje o el boss.</li>
-        <li><b>Ataque</b>: el daño que hace cada golpe.</li>
-        <li><b>Velocidad</b>: la probabilidad de atacar dos veces en un turno. Se calcula con el valor más alto entre el personaje y el boss.</li>
-        <li><b>Esquiva</b>: la probabilidad de evitar un ataque. Se calcula con el valor más alto entre el personaje y el boss.</li>
         <li>Si respondes bien, atacas al boss. Si respondes mal, el boss te ataca.</li>
-        <li>Al vencer a un boss aparece otro de un nivel más, con mejores stats. Llega al boss de nivel 25 para ganar (35 con un personaje secreto).</li>
-        <li>Al subir de nivel ganas 2 puntos (4 con un personaje secreto) para repartir entre tus stats. Subir la vida también te cura.</li>
-        <li>Las divisiones se responden solo con la parte entera del resultado.</li>
-        <li>Puedes responder con el ratón o con las teclas 1 a 4.</li>
+        <li>Con 3 aciertos seguidos haces un <b>golpe crítico</b>, que quita más vida.</li>
+        <li><b>Vida</b>: cuánto daño aguantas. Cada punto en vida suma 3.</li>
+        <li><b>Ataque</b>: cuánto daño haces en cada golpe.</li>
+        <li><b>Velocidad</b>: la probabilidad de golpear dos veces.</li>
+        <li><b>Esquiva</b>: la probabilidad de evitar los golpes del boss.</li>
+        <li>Al vencer a un boss recuperas vida y aparece el siguiente. Las preguntas se ponen un poco más difíciles cada dos bosses.</li>
+        <li>Las divisiones siempre son exactas y nunca hay números negativos.</li>
+        <li>En el ordenador puedes responder con las teclas 1 a 4.</li>
       </ul>
     </details>
   </main>
 
   <!-- Pantalla de batalla -->
   <main id="pantalla-batalla" class="pantalla" hidden>
-    <div class="arena">
-      <section class="luchador" id="ficha-jugador" aria-label="Tu personaje">
-        <div class="retrato" id="retrato-jugador"></div>
-        <div class="datos">
+    <ol class="mapa" id="mapa" aria-label="Bosses"></ol>
+
+    <section class="escenario" id="escenario" aria-label="Combate">
+      <div class="luchador jugador" id="ficha-jugador">
+        <div class="sprite" id="sprite-jugador"></div>
+        <div class="placa">
           <p class="nombre"><span id="nombre-jugador"></span> <span class="nivel">Nv. <span id="nivel-jugador"></span></span></p>
-          <div class="barra barra-vida" role="meter" aria-label="Vida del personaje" id="barra-vida-jugador"><span></span></div>
-          <p class="cifras"><span id="vida-jugador"></span></p>
-          <div class="barra barra-exp" role="meter" aria-label="Experiencia" id="barra-exp"><span></span></div>
-          <p class="cifras">EXP <span id="exp-actual"></span> · faltan <span id="exp-faltante"></span></p>
-          <dl class="stats" id="stats-jugador"></dl>
+          <div class="barra barra-vida" role="meter" aria-label="Tu vida" aria-valuemin="0" id="barra-vida-jugador"><span></span></div>
+          <p class="cifras" id="vida-jugador"></p>
+          <div class="barra barra-exp" role="meter" aria-label="Experiencia" aria-valuemin="0" id="barra-exp"><span></span></div>
+          <p class="cifras" id="exp-jugador"></p>
         </div>
-        <div class="flotantes" id="flotantes-jugador" aria-hidden="true"></div>
-      </section>
-
-      <section class="pregunta" aria-live="polite">
-        <p class="tipo-pregunta" id="tipo-pregunta"></p>
-        <p class="operacion" id="operacion"></p>
-        <div class="opciones" id="opciones"></div>
-        <p class="pista">Teclas 1–4 para responder</p>
-      </section>
-
-      <section class="luchador boss" id="ficha-boss" aria-label="Boss">
-        <div class="retrato" id="retrato-boss"></div>
-        <div class="datos">
-          <p class="nombre">Boss <span class="nivel">Nv. <span id="nivel-boss"></span></span></p>
-          <div class="barra barra-vida" role="meter" aria-label="Vida del boss" id="barra-vida-boss"><span></span></div>
-          <p class="cifras"><span id="vida-boss"></span></p>
-          <dl class="stats" id="stats-boss"></dl>
-        </div>
-        <div class="flotantes" id="flotantes-boss" aria-hidden="true"></div>
-      </section>
-    </div>
-
-    <section class="registro bloque" aria-labelledby="titulo-registro">
-      <div class="registro-cabecera">
-        <h2 id="titulo-registro" class="subtitulo">Registro de combate</h2>
-        <button type="button" class="boton boton-secundario" id="boton-rendirse">Rendirse</button>
       </div>
-      <ol id="registro" class="lista-registro" aria-live="polite"></ol>
+      <div class="luchador boss" id="ficha-boss">
+        <div class="sprite" id="sprite-boss"></div>
+        <div class="placa">
+          <p class="nombre"><span id="nombre-boss"></span> <span class="nivel">Nv. <span id="nivel-boss"></span></span></p>
+          <div class="barra barra-vida" role="meter" aria-label="Vida del boss" aria-valuemin="0" id="barra-vida-boss"><span></span></div>
+          <p class="cifras" id="vida-boss"></p>
+        </div>
+      </div>
+      <div class="efectos" id="efectos" aria-hidden="true"></div>
+      <p class="anuncio" id="anuncio" aria-live="assertive"></p>
     </section>
+
+    <section class="pregunta" aria-labelledby="operacion">
+      <div class="pregunta-cabecera">
+        <p class="tipo-pregunta" id="tipo-pregunta"></p>
+        <div class="racha" id="racha" aria-live="polite"></div>
+      </div>
+      <p class="operacion" id="operacion"></p>
+      <div class="ayuda" id="ayuda" aria-hidden="true"></div>
+      <div class="opciones" id="opciones"></div>
+      <p class="respuesta-mensaje" id="respuesta-mensaje" role="status"></p>
+    </section>
+
+    <div class="pie-batalla">
+      <details class="registro">
+        <summary>Registro de combate</summary>
+        <ol id="registro" class="lista-registro"></ol>
+      </details>
+      <button type="button" class="boton boton-secundario" id="boton-rendirse">Rendirse</button>
+    </div>
   </main>
 
   <!-- Ventana de subida de nivel -->
   <div class="capa" id="capa-nivel" hidden>
     <div class="ventana" role="dialog" aria-modal="true" aria-labelledby="titulo-nivel">
       <h2 id="titulo-nivel" class="subtitulo">¡Subiste de nivel!</h2>
-      <p>Te quedan <b id="puntos-restantes"></b> para mejorar tus stats.</p>
+      <p>Te quedan <b id="puntos-restantes"></b> para mejorar a tu personaje.</p>
       <div class="mejoras" id="mejoras"></div>
     </div>
   </div>
 
   <!-- Ventana de fin de partida -->
   <div class="capa" id="capa-fin" hidden>
-    <div class="ventana" role="dialog" aria-modal="true" aria-labelledby="titulo-fin">
+    <div class="ventana ventana-fin" role="dialog" aria-modal="true" aria-labelledby="titulo-fin">
+      <div class="sprite-fin" id="sprite-fin"></div>
       <h2 id="titulo-fin" class="subtitulo"></h2>
       <p id="texto-fin"></p>
+      <dl class="resumen" id="resumen"></dl>
       <div class="acciones">
         <button type="button" class="boton" id="boton-reiniciar">Jugar de nuevo</button>
       </div>
@@ -126,7 +148,7 @@
   <div class="capa" id="capa-rendirse" hidden>
     <div class="ventana" role="dialog" aria-modal="true" aria-labelledby="titulo-rendirse">
       <h2 id="titulo-rendirse" class="subtitulo">¿Rendirte?</h2>
-      <p>Perderás el progreso de esta partida y volverás a la selección de personaje.</p>
+      <p>Perderás esta partida y volverás a elegir personaje.</p>
       <div class="acciones">
         <button type="button" class="boton boton-secundario" id="boton-seguir">Seguir jugando</button>
         <button type="button" class="boton" id="boton-confirmar-rendirse">Rendirme</button>
@@ -134,10 +156,13 @@
     </div>
   </div>
 
-  <footer class="pie">Proyecto universitario de Santiago Quiroga Torres. Versión web de la lógica original en Java.</footer>
+  <canvas class="confeti" id="confeti" aria-hidden="true"></canvas>
+
+  <footer class="pie">Proyecto universitario de Santiago Quiroga Torres, ahora en versión web.</footer>
 </div>
 
 <script src="js/logica.js"></script>
+<script src="js/dibujos.js"></script>
 <script src="js/interfaz.js"></script>
 </body>
 </html>

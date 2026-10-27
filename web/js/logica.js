@@ -1,43 +1,72 @@
 /*
- * Logic Boss Game - lógica del juego.
+ * Logic Boss Game - lógica del juego (versión web 3).
  *
- * Traducción a JavaScript de las clases Java de src/LogicBossGame
- * (personajesUno, bossUno, aplicacionesUno, operacionesUno y sistemaUno).
- * Las fórmulas, probabilidades y el orden de cada turno son los mismos que
- * en la versión de consola; aquí solo cambia la forma de pedir y mostrar
- * los datos, que ahora la hace la interfaz gráfica (interfaz.js).
+ * Parte de las clases Java de src/LogicBossGame (personajes, boss,
+ * experiencia, preguntas y bucle de combate) con tres cambios pedidos:
+ *   - Preguntas pensadas para niños: sin negativos ni decimales, divisiones
+ *     exactas, y la dificultad sube poco a poco con cada boss.
+ *   - Balance nuevo: 10 bosses, probabilidades claras, curación al vencer
+ *     a un boss y rachas de aciertos con golpe crítico.
+ *   - Arreglos del original: los personajes secretos ya pueden ganar y la
+ *     experiencia ya no tiene ramas que nunca se usan.
+ * La interfaz (interfaz.js) solo dibuja el estado y anima los eventos.
  */
 (function (global) {
   "use strict";
 
-  var SHORT_MAX = 32767;
-
-  // Emula los casts (short) e int de Java para que los desbordes coincidan.
-  function aShort(x) {
-    return (x << 16) >> 16;
-  }
-
-  function aInt(x) {
-    return x | 0;
-  }
-
-  // División entera de Java: trunca hacia cero.
-  function divEntera(a, b) {
-    return Math.trunc(a / b);
-  }
-
   /* ------------------------------------------------------------------ */
-  /* personajesUno                                                       */
+  /* Configuración                                                       */
   /* ------------------------------------------------------------------ */
+
+  var NIVEL_FINAL = 10;
+  var RACHA_CRITICO = 3;
+  var MULTIPLICADOR_CRITICO = 1.5;
+  var CURACION_AL_VENCER = 0.6;
+  var VIDA_POR_PUNTO = 3;
 
   var PERSONAJES = {
-    "1": { id: "paladin", nombre: "Paladín", vida: 10, ataque: 10, velocidad: 10, esquiva: 10, secreto: false },
-    "2": { id: "asesino", nombre: "Asesino", vida: 8, ataque: 10, velocidad: 11, esquiva: 11, secreto: false },
-    "3": { id: "mago", nombre: "Mago", vida: 8, ataque: 14, velocidad: 6, esquiva: 12, secreto: false },
-    "4": { id: "arquero", nombre: "Arquero", vida: 9, ataque: 12, velocidad: 10, esquiva: 8, secreto: false },
-    "777": { id: "saitama", nombre: "Saitama", vida: 899999999, ataque: 899999999, velocidad: 899999999, esquiva: 899999999, secreto: true },
-    "888": { id: "messi", nombre: "Messi", vida: 799, ataque: 799, velocidad: 799, esquiva: 799, secreto: true }
+    "1": { id: "paladin", nombre: "Paladín", vida: 34, ataque: 10, velocidad: 9, esquiva: 9, secreto: false, lema: "Aguanta muchos golpes." },
+    "2": { id: "asesino", nombre: "Asesino", vida: 26, ataque: 10, velocidad: 13, esquiva: 13, secreto: false, lema: "Rápido y difícil de golpear." },
+    "3": { id: "mago", nombre: "Mago", vida: 28, ataque: 15, velocidad: 7, esquiva: 11, secreto: false, lema: "Golpes muy fuertes." },
+    "4": { id: "arquero", nombre: "Arquero", vida: 28, ataque: 12, velocidad: 11, esquiva: 9, secreto: false, lema: "Equilibrado en todo." },
+    "777": { id: "saitama", nombre: "Saitama", vida: 40, ataque: 40, velocidad: 8, esquiva: 8, secreto: true, lema: "Un solo puñetazo." },
+    "888": { id: "messi", nombre: "Messi", vida: 34, ataque: 14, velocidad: 22, esquiva: 18, secreto: true, lema: "Siempre hace doble jugada." }
   };
+
+  var BOSSES = [
+    { nombre: "Blob Sumón", forma: "blob" },
+    { nombre: "Rey Blob", forma: "blob", corona: true },
+    { nombre: "Robo-Resta", forma: "robot" },
+    { nombre: "Mega Robo", forma: "robot", corona: true },
+    { nombre: "Murciélago Tablas", forma: "murcielago" },
+    { nombre: "Vampi-Tablas", forma: "murcielago", corona: true },
+    { nombre: "Fantasma Cifras", forma: "fantasma" },
+    { nombre: "Gran Fantasma", forma: "fantasma", corona: true },
+    { nombre: "Dragón Divisor", forma: "dragon" },
+    { nombre: "Dragón Supremo", forma: "dragon", corona: true }
+  ];
+
+  var DIFICULTADES = {
+    facil: { nombre: "Fácil", edad: "6 a 7 años", desplazamiento: -1, danioBoss: 0.7 },
+    normal: { nombre: "Normal", edad: "8 a 9 años", desplazamiento: 0, danioBoss: 1 },
+    dificil: { nombre: "Difícil", edad: "10 años o más", desplazamiento: 1, danioBoss: 1.2 }
+  };
+
+  function limitar(x, min, max) {
+    return Math.max(min, Math.min(max, x));
+  }
+
+  function entero(rnd, min, max) {
+    return min + Math.floor(rnd() * (max - min + 1));
+  }
+
+  function elegir(rnd, lista) {
+    return lista[Math.floor(rnd() * lista.length)];
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Personaje (personajesUno)                                           */
+  /* ------------------------------------------------------------------ */
 
   function Personaje(clave) {
     var base = PERSONAJES[clave];
@@ -45,437 +74,315 @@
     this.id = base.id;
     this.nombre = base.nombre;
     this.secreto = base.secreto;
-    this.nivelPj = 1;
+    this.nivel = 1;
+    this.vidaMax = base.vida;
     this.vida = base.vida;
     this.ataque = base.ataque;
     this.velocidad = base.velocidad;
     this.esquiva = base.esquiva;
-    this.estVIDA = this.vida;
-    this.estATAQUE = this.ataque;
-    this.estVELOCIDAD = this.velocidad;
-    this.estESQUIVA = this.esquiva;
   }
 
-  Personaje.prototype.nivelPersonaje = function () {
-    this.nivelPj += 1;
-  };
-
-  // Igual que en Java, subir la vida también cura: estVIDA vuelve a la vida máxima.
-  Personaje.prototype.aumentarVida = function (a) {
-    this.vida = aInt(this.vida + a);
-    this.estVIDA = this.vida;
-  };
-
-  Personaje.prototype.aumentarAtaque = function (a) {
-    this.ataque = aInt(this.ataque + a);
-    this.estATAQUE = this.ataque;
-  };
-
-  Personaje.prototype.aumentarVelocidad = function (a) {
-    this.velocidad = aInt(this.velocidad + a);
-    this.estVELOCIDAD = this.velocidad;
-  };
-
-  Personaje.prototype.aumentarEsquiva = function (a) {
-    this.esquiva = aInt(this.esquiva + a);
-    this.estESQUIVA = this.esquiva;
-  };
-
-  Personaje.prototype.disminuirVida = function (a) {
-    this.estVIDA = aInt(this.estVIDA - a);
+  Personaje.prototype.curar = function (cantidad) {
+    var antes = this.vida;
+    this.vida = Math.min(this.vidaMax, this.vida + Math.round(cantidad));
+    return this.vida - antes;
   };
 
   /* ------------------------------------------------------------------ */
-  /* bossUno                                                             */
+  /* Boss (bossUno)                                                      */
   /* ------------------------------------------------------------------ */
 
-  function Boss() {
-    this.nivelPjs = 1;
-    this.nivelBoss = 1;
-    this.vidaBoss = 50;
-    this.ataqueBoss = 2;
-    this.velocidadBoss = 8 + ((2 * this.nivelBoss) - this.nivelPjs);
-    this.esquivaBoss = 4;
-    this.esTvidaBoss = this.vidaBoss;
-    this.esTataqueBoss = this.ataqueBoss;
-    this.esTvelocidadBoss = this.velocidadBoss;
-    this.esTesquivaBoss = this.esquivaBoss;
+  function Boss(nivel) {
+    var info = BOSSES[nivel - 1];
+    this.nivel = nivel;
+    this.nombre = info.nombre;
+    this.forma = info.forma;
+    this.corona = !!info.corona;
+    this.vidaMax = 28 + 13 * (nivel - 1);
+    this.vida = this.vidaMax;
+    this.ataque = 2 + nivel;
+    this.velocidad = 5 + nivel;
+    this.esquiva = 4 + nivel;
   }
 
-  Boss.prototype.nivelPersonajeBoss = function () {
-    this.nivelPjs += 1;
-  };
-
-  Boss.prototype.subirNivel = function () {
-    this.nivelBoss += 1;
-  };
-
-  // Restaura la vida del boss al nuevo máximo.
-  Boss.prototype.aumertarVidaBoss = function (veces) {
-    this.vidaBoss = aInt(this.vidaBoss + 20 * (veces || 1));
-    this.esTvidaBoss = this.vidaBoss;
-  };
-
-  Boss.prototype.aumentarAtaqueBoss = function (veces) {
-    this.ataqueBoss = aInt(this.ataqueBoss + 2 * (veces || 1));
-    this.esTataqueBoss = this.ataqueBoss;
-  };
-
-  Boss.prototype.aumentarVelocidadBoss = function () {
-    this.velocidadBoss = 7 + ((2 * this.nivelBoss) - this.nivelPjs);
-    this.esTvelocidadBoss = this.velocidadBoss;
-  };
-
-  Boss.prototype.aumentarEsquivaBoss = function (veces) {
-    this.esquivaBoss = aInt(this.esquivaBoss + 3 * (veces || 1));
-    this.esTesquivaBoss = this.esquivaBoss;
-  };
-
-  Boss.prototype.disminuirVidaBoss = function (a) {
-    this.esTvidaBoss = aInt(this.esTvidaBoss - a);
-  };
-
   /* ------------------------------------------------------------------ */
-  /* aplicacionesUno (experiencia)                                       */
+  /* Experiencia (aplicacionesUno)                                       */
   /* ------------------------------------------------------------------ */
 
   function Experiencia(rnd) {
     this.rnd = rnd;
-    this.nivelBoosApli = 1;
-    this.nivelPjApli = 1;
-    this.expTotal = 60;
-    this.exp = 0;
-    this.estExp = this.exp;
+    this.actual = 0;
+    this.necesaria = 40;
   }
 
-  Experiencia.prototype.probabilidad = function () {
-    return aShort(Math.floor(this.rnd() * 5000) + 1);
-  };
-
-  Experiencia.prototype.aumentarExp1 = function () {
-    this.estExp = aShort(this.estExp + aShort(15 + (this.nivelBoosApli * 2) - this.nivelPjApli));
-  };
-
-  Experiencia.prototype.aumentarExp2 = function () {
-    var x = Math.floor(this.rnd() * 10) + 1;
-    // Las dos primeras condiciones vienen tal cual del original y nunca se
-    // cumplen (x no puede valer 3 y 5 a la vez), así que siempre se suma 1-9.
-    if (x === 3 && x === 5 && x === 7 && x === 9) {
-      this.estExp = aShort(this.estExp + aShort(this.nivelBoosApli * this.probabilidad()));
-    } else if (x === 2 && x === 4 && x === 6 && x === 8) {
-      this.estExp = aShort(this.estExp + aShort(divEntera(this.nivelBoosApli * this.probabilidad(), 2)));
-    } else {
-      this.estExp = aShort(this.estExp + aShort(Math.floor(this.rnd() * 9) + 1));
-    }
-  };
-
-  Experiencia.prototype.aumentarExpJuego = function () {
-    var x = Math.floor(this.rnd() * 2) + 1;
-    if (x === 1) {
-      this.aumentarExp2();
-    } else {
-      this.aumentarExp1();
-    }
-  };
-
-  // Sube el requisito en 60 y reinicia la experiencia actual a 0.
-  Experiencia.prototype.aumentarExpTotal = function () {
-    this.expTotal = aShort(this.expTotal + 60);
-    this.estExp = this.exp;
+  // Cada golpe da experiencia según el nivel del boss, con un pequeño extra al azar.
+  Experiencia.prototype.ganar = function (nivelBoss) {
+    var cantidad = 8 + nivelBoss + entero(this.rnd, 0, 4);
+    this.actual += cantidad;
+    return cantidad;
   };
 
   Experiencia.prototype.faltante = function () {
-    return this.expTotal - this.estExp;
+    return this.necesaria - this.actual;
+  };
+
+  // La experiencia sobrante se conserva para el siguiente nivel.
+  Experiencia.prototype.subirNivel = function () {
+    this.actual -= this.necesaria;
+    this.necesaria += 20;
   };
 
   /* ------------------------------------------------------------------ */
-  /* operacionesUno (preguntas)                                          */
+  /* Preguntas (operacionesUno)                                          */
   /* ------------------------------------------------------------------ */
 
-  function Operaciones(rnd) {
-    this.rnd = rnd;
+  // Tramo de dificultad según el boss: sube cada dos bosses.
+  function tramoPregunta(nivelBoss, dificultad) {
+    var base = Math.ceil(nivelBoss / 2);
+    return limitar(base + DIFICULTADES[dificultad].desplazamiento, 1, 6);
   }
 
-  Operaciones.prototype.randomUno = function () {
-    return aShort(Math.floor(2 + this.rnd() * 45));
+  var TRAMOS = {
+    1: { tipos: ["suma", "resta"], hasta: 10 },
+    2: { tipos: ["suma", "resta"], hasta: 20 },
+    3: { tipos: ["suma", "resta", "multiplicacion"], hasta: 20, tablas: [1, 2, 5, 10] },
+    4: { tipos: ["suma", "resta", "multiplicacion", "multiplicacion"], hasta: 50, tablas: [2, 3, 4, 5, 10] },
+    5: { tipos: ["suma", "resta", "multiplicacion", "division"], hasta: 100, tablas: [2, 3, 4, 5, 6, 10] },
+    6: { tipos: ["suma", "resta", "multiplicacion", "division"], hasta: 100, tablas: [2, 3, 4, 5, 6, 7, 8, 9, 10] }
   };
 
-  Operaciones.prototype.randomDos = function () {
-    return aShort(Math.floor(3 + this.rnd() * 15));
-  };
+  function crearPregunta(rnd, tramo) {
+    var conf = TRAMOS[tramo];
+    var tipo = elegir(rnd, conf.tipos);
+    var a, b, respuesta, simbolo, nombre;
 
-  Operaciones.prototype.randomResp = function () {
-    return aShort(Math.floor(1 + this.rnd() * 4));
-  };
-
-  Operaciones.prototype.randomFinal = function () {
-    return Math.floor(1 + this.rnd() * 4);
-  };
-
-  Operaciones.prototype.potenciar = function (a, b) {
-    var poten = a;
-    if (b === 0) {
-      poten = a === 0 ? SHORT_MAX : 1;
+    if (tipo === "suma") {
+      respuesta = entero(rnd, Math.min(4, conf.hasta), conf.hasta);
+      a = entero(rnd, 1, respuesta - 1);
+      b = respuesta - a;
+      simbolo = "+";
+      nombre = "Suma";
+    } else if (tipo === "resta") {
+      a = entero(rnd, Math.min(4, conf.hasta), conf.hasta);
+      b = entero(rnd, 1, a - 1);
+      respuesta = a - b;
+      simbolo = "−";
+      nombre = "Resta";
+    } else if (tipo === "multiplicacion") {
+      a = elegir(rnd, conf.tablas);
+      b = entero(rnd, 1, 10);
+      if (rnd() < 0.5) {
+        var t = a; a = b; b = t;
+      }
+      respuesta = a * b;
+      simbolo = "×";
+      nombre = "Multiplicación";
     } else {
-      for (var i = 0; i < b - 1; i++) {
-        poten = aShort(poten * a);
-      }
-    }
-    return poten;
-  };
-
-  // Devuelve las opciones en el orden en que el original las imprimía.
-  // Una opción incorrecta que vale 0 no se muestra, igual que en Java.
-  Operaciones.prototype.randomPreguntas = function (pregunta) {
-    var resp = [
-      aShort(pregunta + this.randomResp() + 1),
-      aShort(pregunta),
-      aShort(pregunta + this.randomResp() + this.randomResp()),
-      aShort(pregunta + this.randomResp() - this.randomResp() + 2)
-    ];
-    var opciones = [];
-    var cont = 0;
-    var valor = true;
-
-    if (resp[1] === 0) {
-      resp[1] = SHORT_MAX;
-    }
-
-    while (valor) {
-      var num = this.randomFinal();
-      if (resp[num - 1] !== 0) {
-        opciones.push(resp[num - 1] === SHORT_MAX ? 0 : resp[num - 1]);
-        resp[num - 1] = 0;
-      }
-      for (var i = 0; i < 4; i++) {
-        if (resp[i] === 0) {
-          cont += 1;
-        }
-        if (cont === 420) {
-          valor = false;
-        }
-      }
-    }
-    return opciones;
-  };
-
-  Operaciones.prototype.crearPregunta = function () {
-    var tipo = Math.floor(this.rnd() * 5) + 1;
-    var uno, dos, respuesta, simbolo, nombre;
-
-    switch (tipo) {
-      case 1:
-        uno = this.randomUno();
-        dos = this.randomDos();
-        respuesta = aShort(uno + dos);
-        simbolo = "+";
-        nombre = "Suma";
-        break;
-      case 2:
-        uno = this.randomUno();
-        dos = this.randomDos();
-        respuesta = aShort(uno - dos);
-        simbolo = "−";
-        nombre = "Resta";
-        break;
-      case 3:
-        uno = aShort((this.randomResp() * 2) - divEntera(this.randomResp(), 2));
-        dos = this.randomResp();
-        respuesta = aShort(uno * dos);
-        simbolo = "×";
-        nombre = "Multiplicación";
-        break;
-      case 4:
-        uno = this.randomUno();
-        dos = this.randomDos();
-        respuesta = aShort(divEntera(uno, dos));
-        simbolo = "÷";
-        nombre = "División entera";
-        break;
-      default:
-        uno = aShort((this.randomResp() * 2) - divEntera(this.randomResp(), 2));
-        dos = this.randomResp();
-        respuesta = this.potenciar(uno, dos);
-        simbolo = "^";
-        nombre = "Potencia";
-        break;
+      b = elegir(rnd, conf.tablas.filter(function (x) { return x > 1; }));
+      respuesta = entero(rnd, 1, 10);
+      a = b * respuesta;
+      simbolo = "÷";
+      nombre = "División";
     }
 
     return {
       tipo: nombre,
-      a: uno,
-      b: dos,
+      clase: tipo,
+      tramo: tramo,
+      a: a,
+      b: b,
       simbolo: simbolo,
       respuesta: respuesta,
-      opciones: this.randomPreguntas(respuesta)
+      opciones: crearOpciones(rnd, tipo, a, b, respuesta)
     };
-  };
-
-  /* ------------------------------------------------------------------ */
-  /* sistemaUno (probabilidades y bucle de juego)                        */
-  /* ------------------------------------------------------------------ */
-
-  function decidirEsquivaAtaque(rnd, a, b) {
-    var proba1, proba2;
-    if (b >= a) {
-      proba1 = Math.floor(1 + rnd() * 10);
-      proba2 = 10 - proba1;
-    } else {
-      proba2 = Math.floor(1 + rnd() * 10);
-      proba1 = 10 - proba2;
-    }
-    return proba1 <= proba2;
   }
 
-  function decidirAtaqueDoble(rnd, a, b) {
-    var proba;
-    if (a <= b) {
-      proba = Math.floor(rnd() * b);
-      return proba >= a;
+  // Tres opciones incorrectas parecidas a la correcta, sin negativos ni repetidas.
+  function crearOpciones(rnd, tipo, a, b, respuesta) {
+    var candidatos = [respuesta + 1, respuesta - 1, respuesta + 2, respuesta - 2];
+    if (respuesta >= 15) {
+      candidatos.push(respuesta + 10, respuesta - 10);
     }
-    proba = Math.floor(rnd() * a);
-    return proba >= b;
+    if (tipo === "multiplicacion") {
+      candidatos.push(a * (b + 1), a * (b - 1), (a + 1) * b);
+    }
+    if (tipo === "resta" || tipo === "suma") {
+      candidatos.push(tipo === "resta" ? a + b : Math.abs(a - b));
+    }
+    var vistas = {};
+    vistas[respuesta] = true;
+    var malas = [];
+    barajar(rnd, candidatos).forEach(function (c) {
+      if (malas.length < 3 && c >= 0 && !vistas[c]) {
+        vistas[c] = true;
+        malas.push(c);
+      }
+    });
+    var extra = respuesta + 3;
+    while (malas.length < 3) {
+      if (!vistas[extra]) {
+        vistas[extra] = true;
+        malas.push(extra);
+      }
+      extra += 1;
+    }
+    return barajar(rnd, malas.concat([respuesta]));
+  }
+
+  function barajar(rnd, lista) {
+    var copia = lista.slice();
+    for (var i = copia.length - 1; i > 0; i--) {
+      var j = Math.floor(rnd() * (i + 1));
+      var t = copia[i]; copia[i] = copia[j]; copia[j] = t;
+    }
+    return copia;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Probabilidades (sistemaUno)                                         */
+  /* ------------------------------------------------------------------ */
+
+  // Probabilidad de que el defensor esquive: crece con la diferencia de esquiva.
+  function probEsquiva(defensor, atacante, base) {
+    return limitar(base + (defensor.esquiva - atacante.esquiva) * 0.02, 0.05, 0.5);
+  }
+
+  // Probabilidad de golpear dos veces: crece con la diferencia de velocidad.
+  function probDoble(atacante, defensor) {
+    return limitar(0.15 + (atacante.velocidad - defensor.velocidad) * 0.03, 0.05, 0.6);
   }
 
   // Las respuestas a las adivinanzas bonus, como se escribían en consola.
   function seleccionar(texto) {
-    var pjs = String(texto).trim();
-    var normal = pjs.toLowerCase();
-    if (normal === "uno") {
+    var normal = String(texto).trim().toLowerCase();
+    if (normal === "uno" || normal === "1") {
       return "777";
     }
     if (normal === "messi") {
       return "888";
     }
-    return pjs;
+    return null;
   }
 
-  var NIVEL_FINAL_NORMAL = 25;
-  var NIVEL_FINAL_SECRETO = 35;
+  /* ------------------------------------------------------------------ */
+  /* Partida                                                             */
+  /* ------------------------------------------------------------------ */
 
   function Juego(clave, opciones) {
     if (!PERSONAJES[clave]) {
       throw new Error("Personaje desconocido: " + clave);
     }
-    this.rnd = (opciones && opciones.rnd) || Math.random;
+    opciones = opciones || {};
+    this.rnd = opciones.rnd || Math.random;
+    this.dificultad = DIFICULTADES[opciones.dificultad] ? opciones.dificultad : "normal";
     this.pj = new Personaje(clave);
-    this.bs = new Boss();
-    this.ap = new Experiencia(this.rnd);
-    this.pr = new Operaciones(this.rnd);
+    this.bs = new Boss(1);
+    this.exp = new Experiencia(this.rnd);
     this.puntosPorNivel = this.pj.secreto ? 4 : 2;
     this.puntosPendientes = 0;
-    this.fin = null;
+    this.racha = 0;
+    this.mejorRacha = 0;
+    this.aciertos = 0;
     this.turno = 0;
-    this.pregunta = this.pr.crearPregunta();
+    this.fin = null;
+    this.pregunta = this._nuevaPregunta();
   }
 
-  Juego.PERSONAJES = PERSONAJES;
+  Juego.prototype._nuevaPregunta = function () {
+    return crearPregunta(this.rnd, tramoPregunta(this.bs.nivel, this.dificultad));
+  };
 
-  // Resuelve un turno completo con la respuesta del jugador, en el mismo
-  // orden que el while de sistemaUno.main. Devuelve los eventos del turno.
+  Juego.prototype._danioBoss = function () {
+    return Math.max(1, Math.round(this.bs.ataque * DIFICULTADES[this.dificultad].danioBoss));
+  };
+
+  // Resuelve un turno completo con la respuesta del jugador y devuelve sus eventos.
   Juego.prototype.responder = function (valor) {
     if (this.fin || this.puntosPendientes > 0) {
       throw new Error("No se puede responder ahora");
     }
     var pj = this.pj;
     var bs = this.bs;
-    var ap = this.ap;
     var rnd = this.rnd;
     var eventos = [];
     var pregunta = this.pregunta;
     var acierto = Number(valor) === pregunta.respuesta;
-    var expPorGolpe = pj.secreto ? 2 : 1;
-    var i;
 
     this.turno += 1;
     eventos.push({ tipo: acierto ? "acierto" : "error", respuesta: pregunta.respuesta });
 
     if (acierto) {
-      if (!decidirEsquivaAtaque(rnd, bs.esquivaBoss, pj.esquiva)) {
-        bs.disminuirVidaBoss(pj.ataque);
-        for (i = 0; i < expPorGolpe; i++) ap.aumentarExpJuego();
-        eventos.push({ tipo: "golpeJugador", danio: pj.ataque, golpe: 1, texto: "¡Has logrado darle al boss! (x1)" });
-        if (decidirAtaqueDoble(rnd, bs.velocidadBoss, pj.velocidad)) {
-          bs.disminuirVidaBoss(pj.ataque);
-          for (i = 0; i < expPorGolpe; i++) ap.aumentarExpJuego();
-          eventos.push({ tipo: "golpeJugador", danio: pj.ataque, golpe: 2, texto: "¡Has logrado darle al boss un segundo ataque! (x2)" });
-        }
+      this.aciertos += 1;
+      this.racha += 1;
+      this.mejorRacha = Math.max(this.mejorRacha, this.racha);
+      var critico = this.racha >= RACHA_CRITICO;
+      var danio = Math.round(pj.ataque * (critico ? MULTIPLICADOR_CRITICO : 1));
+      var golpes = 0;
+
+      if (rnd() < probEsquiva(bs, pj, 0.1)) {
+        eventos.push({ tipo: "bossEsquiva", texto: bs.nombre + " esquivó tu ataque." });
       } else {
-        eventos.push({ tipo: "bossEsquiva", texto: "Has fallado, el boss te ha esquivado." });
+        golpes = 1;
+        // Messi siempre hace doble jugada; el resto depende de la velocidad.
+        if (pj.id === "messi" || rnd() < probDoble(pj, bs)) {
+          golpes = 2;
+        }
+      }
+      for (var g = 1; g <= golpes && bs.vida > 0; g++) {
+        bs.vida = Math.max(0, bs.vida - danio);
+        var ganada = this.exp.ganar(bs.nivel);
+        eventos.push({
+          tipo: "golpeJugador",
+          danio: danio,
+          golpe: g,
+          critico: critico,
+          exp: ganada,
+          texto: (critico ? "¡Golpe crítico! " : "") + (g === 2 ? "¡Segundo golpe! " : "¡Le diste! ") + bs.nombre + " pierde " + danio + " de vida."
+        });
       }
     } else {
-      if (decidirEsquivaAtaque(rnd, bs.esquivaBoss, pj.esquiva)) {
-        pj.disminuirVida(bs.ataqueBoss);
-        eventos.push({ tipo: "golpeBoss", danio: bs.ataqueBoss, golpe: 1, texto: "Has fallado, no lograste esquivar al boss. (x1)" });
-        if (!decidirAtaqueDoble(rnd, bs.velocidadBoss, pj.velocidad)) {
-          pj.disminuirVida(bs.ataqueBoss);
-          eventos.push({ tipo: "golpeBoss", danio: bs.ataqueBoss, golpe: 2, texto: "Has fallado, no lograste esquivar al boss de nuevo. (x2)" });
-        }
+      this.racha = 0;
+      if (rnd() < probEsquiva(pj, bs, 0.25)) {
+        eventos.push({ tipo: "jugadorEsquiva", texto: "¡Esquivaste el ataque de " + bs.nombre + "!" });
       } else {
-        eventos.push({ tipo: "jugadorEsquiva", texto: "¡Has logrado esquivar el ataque del boss!" });
-        if (pj.secreto) {
-          eventos.push({ tipo: "bossEvoluciona", nivel: bs.nivelBoss, texto: "¡El boss de nivel " + bs.nivelBoss + " ha evolucionado!" });
-          bs.subirNivel();
-          bs.nivelPersonajeBoss();
-          bs.aumentarVelocidadBoss();
-          if (pj.clave === "777") {
-            bs.aumertarVidaBoss(35000);
-            bs.aumentarAtaqueBoss(3500000);
-            bs.aumentarEsquivaBoss(3500000);
-          } else {
-            bs.aumertarVidaBoss(15);
-            bs.aumentarAtaqueBoss(15);
-            bs.aumentarEsquivaBoss(15);
-          }
+        var golpesBoss = rnd() < probDoble(bs, pj) ? 2 : 1;
+        var danioBoss = this._danioBoss();
+        for (var h = 1; h <= golpesBoss && pj.vida > 0; h++) {
+          pj.vida = Math.max(0, pj.vida - danioBoss);
+          eventos.push({
+            tipo: "golpeBoss",
+            danio: danioBoss,
+            golpe: h,
+            texto: (h === 2 ? "¡Otra vez! " : "") + bs.nombre + " te quita " + danioBoss + " de vida."
+          });
         }
       }
     }
 
-    if (bs.esTvidaBoss <= 0) {
-      eventos.push({ tipo: "bossDerrotado", nivel: bs.nivelBoss, texto: "¡Felicidades, has vencido al boss de nivel " + bs.nivelBoss + "!" });
-      bs.subirNivel();
-      if (pj.secreto) {
-        bs.nivelPersonajeBoss();
-        bs.aumentarVelocidadBoss();
-        if (pj.clave === "777") {
-          bs.aumertarVidaBoss(75000);
-          bs.aumentarAtaqueBoss(7000000);
-          bs.aumentarEsquivaBoss(7000000);
-        } else {
-          bs.aumertarVidaBoss(30);
-          bs.aumentarAtaqueBoss(30);
-          bs.aumentarEsquivaBoss(30);
-        }
-      } else {
-        bs.aumertarVidaBoss();
-        bs.aumentarAtaqueBoss();
-        bs.aumentarEsquivaBoss();
-        bs.nivelPersonajeBoss();
-        bs.aumentarVelocidadBoss();
-      }
-    }
-
-    if (pj.secreto) {
-      if (bs.nivelBoss === NIVEL_FINAL_SECRETO && bs.esTvidaBoss <= 0 && pj.nivelPj > 4) {
+    if (bs.vida <= 0) {
+      eventos.push({ tipo: "bossDerrotado", nivel: bs.nivel, nombre: bs.nombre, texto: "¡Venciste a " + bs.nombre + "!" });
+      if (bs.nivel >= NIVEL_FINAL) {
         return this._terminar("victoria", eventos);
-      } else if (bs.nivelBoss === NIVEL_FINAL_SECRETO && bs.esTvidaBoss > 0 && pj.nivelPj <= 4) {
-        return this._terminar("fracaso", eventos);
       }
-    } else if (bs.nivelBoss === NIVEL_FINAL_NORMAL) {
-      return this._terminar("victoria", eventos);
+      var curado = pj.curar(pj.vidaMax * CURACION_AL_VENCER);
+      this.bs = new Boss(bs.nivel + 1);
+      eventos.push({ tipo: "nuevoBoss", nivel: this.bs.nivel, nombre: this.bs.nombre, curado: curado, texto: "¡Aparece " + this.bs.nombre + "!" + (curado > 0 ? " Recuperas " + curado + " de vida." : "") });
     }
 
-    if (ap.faltante() <= 0) {
-      pj.nivelPersonaje();
-      ap.nivelBoosApli += 1;
-      ap.nivelPjApli += 1;
-      ap.aumentarExpTotal();
+    if (pj.vida <= 0) {
+      return this._terminar("derrota", eventos);
+    }
+
+    if (this.exp.faltante() <= 0) {
+      pj.nivel += 1;
+      this.exp.subirNivel();
       this.puntosPendientes = this.puntosPorNivel;
-      eventos.push({ tipo: "subeNivel", nivel: pj.nivelPj, puntos: this.puntosPorNivel, texto: "¡Subiste a nivel " + pj.nivelPj + "! Tienes " + this.puntosPorNivel + " puntos para mejorar tus stats." });
+      eventos.push({ tipo: "subeNivel", nivel: pj.nivel, puntos: this.puntosPorNivel, texto: "¡Subiste a nivel " + pj.nivel + "! Tienes " + this.puntosPorNivel + " puntos para mejorar." });
       return { eventos: eventos, fin: null };
     }
 
-    return this._siguienteTurno(eventos);
+    this.pregunta = this._nuevaPregunta();
+    return { eventos: eventos, fin: null };
   };
 
   // stat: "vida" | "ataque" | "velocidad" | "esquiva"
@@ -483,28 +390,21 @@
     if (this.puntosPendientes <= 0) {
       throw new Error("No hay puntos por asignar");
     }
+    var pj = this.pj;
     if (stat === "vida") {
-      this.pj.aumentarVida(1);
+      pj.vidaMax += VIDA_POR_PUNTO;
+      pj.vida += VIDA_POR_PUNTO;
     } else if (stat === "ataque") {
-      this.pj.aumentarAtaque(1);
+      pj.ataque += 1;
     } else if (stat === "velocidad") {
-      this.pj.aumentarVelocidad(1);
+      pj.velocidad += 1;
     } else {
-      this.pj.aumentarEsquiva(1);
+      pj.esquiva += 1;
     }
     this.puntosPendientes -= 1;
     if (this.puntosPendientes === 0) {
-      return this._siguienteTurno([]);
+      this.pregunta = this._nuevaPregunta();
     }
-    return { eventos: [], fin: null };
-  };
-
-  Juego.prototype._siguienteTurno = function (eventos) {
-    if (this.pj.estVIDA <= 0) {
-      return this._terminar("derrota", eventos);
-    }
-    this.pregunta = this.pr.crearPregunta();
-    return { eventos: eventos, fin: null };
   };
 
   Juego.prototype._terminar = function (resultado, eventos) {
@@ -516,15 +416,17 @@
   var LogicBoss = {
     Juego: Juego,
     PERSONAJES: PERSONAJES,
-    seleccionar: seleccionar,
-    decidirEsquivaAtaque: decidirEsquivaAtaque,
-    decidirAtaqueDoble: decidirAtaqueDoble,
-    Operaciones: Operaciones,
-    Experiencia: Experiencia,
+    BOSSES: BOSSES,
+    DIFICULTADES: DIFICULTADES,
+    NIVEL_FINAL: NIVEL_FINAL,
+    RACHA_CRITICO: RACHA_CRITICO,
+    VIDA_POR_PUNTO: VIDA_POR_PUNTO,
     Boss: Boss,
-    Personaje: Personaje,
-    NIVEL_FINAL_NORMAL: NIVEL_FINAL_NORMAL,
-    NIVEL_FINAL_SECRETO: NIVEL_FINAL_SECRETO
+    seleccionar: seleccionar,
+    crearPregunta: crearPregunta,
+    tramoPregunta: tramoPregunta,
+    probEsquiva: probEsquiva,
+    probDoble: probDoble
   };
 
   if (typeof module !== "undefined" && module.exports) {
